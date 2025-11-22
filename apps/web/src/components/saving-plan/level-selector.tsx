@@ -30,12 +30,15 @@ export function LevelSelector({ levels, selectedLevel, onSelectLevel }: LevelSel
                 <div>
                   <h3 className="text-h4 font-alpina text-black mb-2">{level.name}</h3>
                   <p className="text-body-s text-celo-body-copy mb-3">{level.description}</p>
-                  <div className="flex gap-6 text-body-s">
+                  <div className="flex flex-wrap gap-4 text-body-s">
                     <span className="text-black font-bold">
-                      Daily: {level.dailyAmount} tokens
+                      Days: {level.minDays}-{level.maxDays}
                     </span>
                     <span className="text-black font-bold">
-                      Duration: {level.totalDays} days
+                      Daily: ${level.minDailyAmount}-${level.maxDailyAmount}
+                    </span>
+                    <span className="text-celo-body-copy font-bold">
+                      Penalty: 20% of daily
                     </span>
                   </div>
                 </div>

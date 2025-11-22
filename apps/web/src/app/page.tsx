@@ -23,9 +23,56 @@ export default function Home() {
   
   // Saving plan state
   const [selectedLevel, setSelectedLevel] = useState<SavingLevel | null>(null);
-  const [penaltyStake, setPenaltyStake] = useState("2");
+  const [customDays, setCustomDays] = useState<string>("");
+  const [customDailyAmount, setCustomDailyAmount] = useState<string>("");
+  const [penaltyStake, setPenaltyStake] = useState("0");
   const [hasActivePlan, setHasActivePlan] = useState(false);
   const [currentPlanId, setCurrentPlanId] = useState<bigint | null>(null);
+  
+  // Calculate penalty stake as 20% of daily amount
+  useEffect(() => {
+    if (customDailyAmount) {
+      const daily = parseFloat(customDailyAmount);
+      if (!isNaN(daily) && daily > 0) {
+        const penalty = (daily * 0.2).toFixed(2);
+        setPenaltyStake(penalty);
+      } else {
+        setPenaltyStake("0");
+      }
+    } else {
+      setPenaltyStake("0");
+    }
+  }, [customDailyAmount]);
+  
+  // Set default values when level is selected
+  useEffect(() => {
+    if (selectedLevel) {
+      // Set default to middle of range
+      const defaultDays = Math.floor((selectedLevel.minDays + selectedLevel.maxDays) / 2);
+      const defaultAmount = Math.floor((selectedLevel.minDailyAmount + selectedLevel.maxDailyAmount) / 2);
+      setCustomDays(defaultDays.toString());
+      setCustomDailyAmount(defaultAmount.toString());
+    } else {
+      setCustomDays("");
+      setCustomDailyAmount("");
+      setPenaltyStake("0");
+    }
+  }, [selectedLevel]);
+  
+  // Validation helpers
+  const isValidDays = (days: string): boolean => {
+    if (!selectedLevel) return false;
+    const numDays = parseInt(days);
+    return !isNaN(numDays) && numDays >= selectedLevel.minDays && numDays <= selectedLevel.maxDays;
+  };
+  
+  const isValidDailyAmount = (amount: string): boolean => {
+    if (!selectedLevel) return false;
+    const numAmount = parseFloat(amount);
+    return !isNaN(numAmount) && numAmount >= selectedLevel.minDailyAmount && numAmount <= selectedLevel.maxDailyAmount;
+  };
+  
+  const canCreatePlan = selectedLevel && isValidDays(customDays) && isValidDailyAmount(customDailyAmount);
   
   const { planData, setSelectedPlanId, refetchPlan, createdPlanId } = useSavingContract();
   
@@ -176,37 +223,90 @@ export default function Home() {
                   </Button>
                   
                   <Card className="p-6 border-2 border-black bg-celo-yellow">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-h4 font-alpina text-black mb-1">Selected: <span className="italic">{selectedLevel.name}</span></h3>
-                        <p className="text-body-s text-celo-body-copy">{selectedLevel.description}</p>
-                      </div>
+                    <div>
+                      <h3 className="text-h4 font-alpina text-black mb-1">Selected: <span className="italic">{selectedLevel.name}</span></h3>
+                      <p className="text-body-s text-celo-body-copy">{selectedLevel.description}</p>
                     </div>
                   </Card>
 
                   <div className="space-y-6">
+                    {/* Days Input */}
                     <Card className="p-6 border-2 border-black bg-celo-dark-tan">
                       <label className="block text-eyebrow font-bold text-black mb-3 uppercase">
-                        Penalty Stake Amount (tokens)
+                        Number of Days ({selectedLevel.minDays}-{selectedLevel.maxDays} days)
                       </label>
                       <input
-                        type="text"
-                        value={penaltyStake}
-                        onChange={(e) => setPenaltyStake(e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-black bg-white text-black text-body-m font-inter focus:outline-none focus:ring-2 focus:ring-celo-purple"
-                        placeholder="Enter stake amount"
+                        type="number"
+                        min={selectedLevel.minDays}
+                        max={selectedLevel.maxDays}
+                        value={customDays}
+                        onChange={(e) => setCustomDays(e.target.value)}
+                        className={`w-full px-4 py-3 border-2 border-black bg-white text-black text-body-m font-inter focus:outline-none focus:ring-2 ${
+                          customDays && !isValidDays(customDays)
+                            ? "border-celo-error focus:ring-celo-error"
+                            : "focus:ring-celo-purple"
+                        }`}
+                        placeholder={`Enter days (${selectedLevel.minDays}-${selectedLevel.maxDays})`}
                       />
-                      <p className="mt-3 text-body-s text-celo-body-copy">
-                        This amount will be slashed if you miss too many days
+                      {customDays && !isValidDays(customDays) && (
+                        <p className="mt-2 text-body-s text-celo-error font-bold">
+                          Days must be between {selectedLevel.minDays} and {selectedLevel.maxDays}
+                        </p>
+                      )}
+                    </Card>
+
+                    {/* Daily Amount Input */}
+                    <Card className="p-6 border-2 border-black bg-celo-dark-tan">
+                      <label className="block text-eyebrow font-bold text-black mb-3 uppercase">
+                        Daily Amount (${selectedLevel.minDailyAmount}-${selectedLevel.maxDailyAmount})
+                      </label>
+                      <input
+                        type="number"
+                        min={selectedLevel.minDailyAmount}
+                        max={selectedLevel.maxDailyAmount}
+                        step="0.01"
+                        value={customDailyAmount}
+                        onChange={(e) => setCustomDailyAmount(e.target.value)}
+                        className={`w-full px-4 py-3 border-2 border-black bg-white text-black text-body-m font-inter focus:outline-none focus:ring-2 ${
+                          customDailyAmount && !isValidDailyAmount(customDailyAmount)
+                            ? "border-celo-error focus:ring-celo-error"
+                            : "focus:ring-celo-purple"
+                        }`}
+                        placeholder={`Enter daily amount ($${selectedLevel.minDailyAmount}-$${selectedLevel.maxDailyAmount})`}
+                      />
+                      {customDailyAmount && !isValidDailyAmount(customDailyAmount) && (
+                        <p className="mt-2 text-body-s text-celo-error font-bold">
+                          Daily amount must be between ${selectedLevel.minDailyAmount} and ${selectedLevel.maxDailyAmount}
+                        </p>
+                      )}
+                    </Card>
+
+                    {/* Auto-calculated Penalty Stake */}
+                    <Card className="p-6 border-2 border-black bg-celo-forest-green text-white">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-eyebrow font-bold text-white uppercase mb-1">Penalty Stake</p>
+                          <p className="text-body-s text-white">Automatically calculated as 20% of daily amount</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-h4 font-alpina text-celo-yellow">${penaltyStake}</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-body-s text-white">
+                        This amount will be slashed if you miss too many days (2 day grace period)
                       </p>
                     </Card>
 
-                    <PlanCreator
-                      selectedLevel={selectedLevel}
-                      tokenAddress={tokenAddress}
-                      penaltyStake={penaltyStake}
-                      onPlanCreated={handlePlanCreated}
-                    />
+                    {canCreatePlan && (
+                      <PlanCreator
+                        selectedLevel={selectedLevel}
+                        customDays={parseInt(customDays)}
+                        customDailyAmount={customDailyAmount}
+                        tokenAddress={tokenAddress}
+                        penaltyStake={penaltyStake}
+                        onPlanCreated={handlePlanCreated}
+                      />
+                    )}
                   </div>
                 </>
               )}

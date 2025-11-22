@@ -11,6 +11,8 @@ import ERC20ABI from "@/lib/abi/ERC20.json";
 
 interface PlanCreatorProps {
   selectedLevel: SavingLevel;
+  customDays: number;
+  customDailyAmount: string;
   tokenAddress: `0x${string}`;
   penaltyStake: string;
   onPlanCreated: () => void;
@@ -18,6 +20,8 @@ interface PlanCreatorProps {
 
 export function PlanCreator({
   selectedLevel,
+  customDays,
+  customDailyAmount,
   tokenAddress,
   penaltyStake,
   onPlanCreated,
@@ -50,8 +54,8 @@ export function PlanCreator({
     try {
       await createPlan(
         tokenAddress,
-        selectedLevel.dailyAmount,
-        selectedLevel.totalDays,
+        customDailyAmount,
+        customDays,
         penaltyStake,
         decimals
       );
@@ -69,8 +73,8 @@ export function PlanCreator({
   }
 
   const totalStake = parseUnits(penaltyStake, decimals);
-  const dailyAmountWei = parseUnits(selectedLevel.dailyAmount, decimals);
-  const totalSavings = dailyAmountWei * BigInt(selectedLevel.totalDays);
+  const dailyAmountWei = parseUnits(customDailyAmount, decimals);
+  const totalSavings = dailyAmountWei * BigInt(customDays);
 
   return (
     <Card className="p-8 border-2 border-black bg-celo-forest-green text-white">
@@ -84,23 +88,23 @@ export function PlanCreator({
         <div className="flex justify-between border-b-2 border-white pb-2">
           <span className="text-body-m text-white">Daily Amount:</span>
           <span className="text-body-m font-bold text-white">
-            {selectedLevel.dailyAmount} {tokenSymbol || "tokens"}
+            ${customDailyAmount} {tokenSymbol ? `(${tokenSymbol})` : ""}
           </span>
         </div>
         <div className="flex justify-between border-b-2 border-white pb-2">
           <span className="text-body-m text-white">Total Days:</span>
-          <span className="text-body-m font-bold text-white">{selectedLevel.totalDays} days</span>
+          <span className="text-body-m font-bold text-white">{customDays} days</span>
         </div>
         <div className="flex justify-between border-b-2 border-white pb-2">
-          <span className="text-body-m text-white">Penalty Stake:</span>
+          <span className="text-body-m text-white">Penalty Stake (20%):</span>
           <span className="text-body-m font-bold text-celo-error">
-            {penaltyStake} {tokenSymbol || "tokens"}
+            ${penaltyStake} {tokenSymbol ? `(${formatUnits(totalStake, decimals)} ${tokenSymbol})` : ""}
           </span>
         </div>
         <div className="flex justify-between pt-4 border-t-4 border-celo-yellow">
           <span className="text-body-l font-bold text-white">Total Savings:</span>
           <span className="text-body-l font-bold text-celo-yellow">
-            {formatUnits(totalSavings, decimals)} {tokenSymbol || "tokens"}
+            ${(Number(customDailyAmount) * customDays).toFixed(2)} {tokenSymbol ? `(${formatUnits(totalSavings, decimals)} ${tokenSymbol})` : ""}
           </span>
         </div>
       </div>

@@ -27,29 +27,37 @@ export interface Plan {
 
 export interface SavingLevel {
   name: string;
-  dailyAmount: string;
-  totalDays: number;
+  minDays: number;
+  maxDays: number;
+  minDailyAmount: number;
+  maxDailyAmount: number;
   description: string;
 }
 
 export const SAVING_LEVELS: SavingLevel[] = [
   {
     name: "Beginner",
-    dailyAmount: "1",
-    totalDays: 7,
-    description: "Save 1 token per day for 7 days",
+    minDays: 7,
+    maxDays: 15,
+    minDailyAmount: 5,
+    maxDailyAmount: 50,
+    description: "Choose 7-15 days, $5-$50 daily. Penalty stake: 20% of daily amount",
   },
   {
     name: "Intermediate",
-    dailyAmount: "5",
-    totalDays: 14,
-    description: "Save 5 tokens per day for 14 days",
+    minDays: 16,
+    maxDays: 30,
+    minDailyAmount: 5,
+    maxDailyAmount: 50,
+    description: "Choose 16-30 days, $5-$50 daily. Penalty stake: 20% of daily amount",
   },
   {
     name: "Hard",
-    dailyAmount: "10",
-    totalDays: 30,
-    description: "Save 10 tokens per day for 30 days",
+    minDays: 31,
+    maxDays: 90,
+    minDailyAmount: 5,
+    maxDailyAmount: 50,
+    description: "Choose 31-90 days, $5-$50 daily. Penalty stake: 20% of daily amount",
   },
 ];
 
