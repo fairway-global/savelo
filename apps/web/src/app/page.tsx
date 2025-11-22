@@ -10,7 +10,7 @@ import { useSavingContract, SAVING_LEVELS, SavingLevel } from "@/hooks/use-savin
 import { env } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { WalletConnector } from "@/components/wallet-connector";
+import { ArrowLeft } from "lucide-react";
 
 export default function Home() {
   const { context, isMiniAppReady } = useMiniApp();
@@ -72,18 +72,6 @@ export default function Home() {
     }
   }, [planData]);
 
-  // Extract user data from context
-  const user = context?.user;
-  const walletAddress = address || user?.custody || user?.verifications?.[0] || "No Address";
-  const displayName = user?.displayName || user?.username || "User";
-  const username = user?.username || "@user";
-  const pfpUrl = user?.pfpUrl;
-  
-  // Format wallet address to show first 6 and last 4 characters
-  const formatAddress = (address: string) => {
-    if (!address || address.length < 10) return address;
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
 
   const handlePlanCreated = () => {
     // Use the plan ID extracted from the transaction receipt
@@ -139,28 +127,6 @@ export default function Home() {
             <p className="text-body-l text-celo-body-copy mb-8 font-inter italic">
               Save Daily. Keep the Streak.
             </p>
-            
-            {/* User Profile */}
-            <div className="flex items-center justify-center gap-4 mb-6">
-              {pfpUrl && (
-                <div className="border-2 border-black">
-                  <img 
-                    src={pfpUrl} 
-                    alt="Profile" 
-                    className="w-16 h-16 object-cover"
-                  />
-                </div>
-              )}
-              <div className="text-left border-l-2 border-black pl-4">
-                <p className="text-body-m font-bold text-black">{displayName}</p>
-                <p className="text-body-s text-celo-body-copy font-inter">{formatAddress(walletAddress)}</p>
-              </div>
-            </div>
-
-            {/* Wallet Connector */}
-            <div className="flex justify-center mb-8">
-              <WalletConnector />
-            </div>
           </div>
 
           {/* Main Content */}
@@ -169,11 +135,27 @@ export default function Home() {
               <p className="text-body-m text-celo-body-copy">Please connect your wallet to continue.</p>
             </Card>
           ) : hasActivePlan && planData && currentPlanId ? (
-            <PlanCalendar 
-              plan={planData} 
-              planId={currentPlanId}
-              tokenAddress={tokenAddress}
-            />
+            <div className="space-y-6">
+              <Button
+                onClick={() => {
+                  setHasActivePlan(false);
+                  setCurrentPlanId(null);
+                  setSelectedPlanId(null);
+                  setSelectedLevel(null);
+                  localStorage.removeItem("savingPlanId");
+                }}
+                variant="outline"
+                className="border-2 border-black"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Plans
+              </Button>
+              <PlanCalendar 
+                plan={planData} 
+                planId={currentPlanId}
+                tokenAddress={tokenAddress}
+              />
+            </div>
           ) : (
             <div className="space-y-8">
               {!selectedLevel ? (
@@ -184,19 +166,21 @@ export default function Home() {
                 />
               ) : (
                 <>
+                  <Button
+                    onClick={() => setSelectedLevel(null)}
+                    variant="outline"
+                    className="border-2 border-black"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Level Selection
+                  </Button>
+                  
                   <Card className="p-6 border-2 border-black bg-celo-yellow">
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="text-h4 font-alpina text-black mb-1">Selected: <span className="italic">{selectedLevel.name}</span></h3>
                         <p className="text-body-s text-celo-body-copy">{selectedLevel.description}</p>
                       </div>
-                      <Button
-                        onClick={() => setSelectedLevel(null)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Change
-                      </Button>
                     </div>
                   </Card>
 
@@ -240,7 +224,7 @@ export default function Home() {
                 
                 try {
                   const result = await sdk.actions.addMiniApp();
-                  if (result.added) {
+                  if (result) {
                     setAddMiniAppMessage("Miniapp added successfully!");
                   } else {
                     setAddMiniAppMessage("Miniapp was not added (user declined or already exists)");
