@@ -24,7 +24,7 @@ export function PlanCalendar({ plan, planId, tokenAddress }: PlanCalendarProps) 
     address: tokenAddress,
     abi: ERC20ABI,
     functionName: "symbol",
-  });
+  }) as { data: string | undefined };
 
   const { data: tokenDecimals } = useReadContract({
     address: tokenAddress,
@@ -32,7 +32,7 @@ export function PlanCalendar({ plan, planId, tokenAddress }: PlanCalendarProps) 
     functionName: "decimals",
   }) as { data: number | undefined };
 
-  const decimals = tokenDecimals || 18;
+  const decimals: number = tokenDecimals || 18;
   const totalDays = Number(plan.totalDays);
   const currentDay = Number(plan.currentDay);
   const missedDays = Number(plan.missedDays);
@@ -42,7 +42,7 @@ export function PlanCalendar({ plan, planId, tokenAddress }: PlanCalendarProps) 
   const handlePayDaily = async () => {
     setIsPaying(true);
     try {
-      await payDaily(planId, tokenAddress, formatUnits(plan.dailyAmount, decimals), decimals);
+      await payDaily(planId, formatUnits(plan.dailyAmount, decimals));
     } catch (err) {
       console.error("Error paying daily:", err);
       alert("Failed to pay daily. Please try again.");
@@ -151,12 +151,13 @@ export function PlanCalendar({ plan, planId, tokenAddress }: PlanCalendarProps) 
         <div className="border-t-4 border-black pt-6">
           <div className="mb-6">
             <p className="text-body-m text-black mb-3 font-bold">
-              Pay today's saving: {formatUnits(plan.dailyAmount, decimals)} {tokenSymbol || "tokens"}
+              Pay today&apos;s saving: {formatUnits(plan.dailyAmount, decimals)}{" "}
+              {tokenSymbol || "tokens"}
             </p>
             {daysUntilNext > 0 && (
               <div className="border-2 border-black bg-celo-orange p-3 mb-4">
                 <p className="text-body-s text-black font-bold">
-                  ⚠️ You're {daysUntilNext} day(s) behind. Pay now to keep your streak!
+                  ⚠️ You&apos;re {daysUntilNext} day(s) behind. Pay now to keep your streak!
                 </p>
               </div>
             )}
@@ -198,7 +199,7 @@ export function PlanCalendar({ plan, planId, tokenAddress }: PlanCalendarProps) 
           <div className="border-2 border-black bg-celo-success p-6">
             <p className="text-body-l text-black font-bold mb-2">🎉 Congratulations!</p>
             <p className="text-body-m text-black mb-3">
-              You've completed your saving streak! You can now withdraw:
+              You&apos;ve completed your saving streak! You can now withdraw:
             </p>
             <div className="space-y-2 mt-4">
               <div className="flex justify-between border-t-2 border-black pt-2">

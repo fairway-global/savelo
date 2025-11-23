@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 
 /**
  * @title SimpleSavingPlan
  * @notice A contract for daily savings with commitment stakes, penalties, and rewards
+ * Uses native CELO token instead of ERC20 tokens
  * 
  * Features:
  * - Users create saving plans with daily payment requirements
@@ -19,12 +20,14 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * - Reward pool distributed to completers
  */
 contract SimpleSavingPlan is ReentrancyGuard, Ownable {
+    using Address for address payable;
+
     struct Plan {
         address user;              // Plan owner
-        address token;             // ERC20 token used for payments and stake
-        uint256 dailyAmount;       // Amount required per day
+        uint256 dailyAmount;       // Amount required per day (in CELO wei)
         uint256 totalDays;         // Total days in the plan
-        uint256 penaltyStake;      // Stake amount (in same token)
+        uint256 penaltyStake;      // Stake amount (in CELO wei)
+        uint256 penaltyPercent;    // Penalty percentage (e.g., 10 = 10%, 15 = 15%, 20 = 20%)
         uint256 currentDay;        // Current day (number of successful payments)
         uint256 missedDays;        // Number of missed days
         bool isActive;             // Plan is active
@@ -39,8 +42,8 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
     uint256 public planCounter;
     mapping(uint256 => Plan) public plans;
     
-    // Reward pool tracking
-    mapping(address => uint256) public rewardPool; // token => amount in reward pool
+    // Reward pool tracking (native CELO)
+    uint256 public rewardPool; // Total CELO in reward pool
     mapping(uint256 => bool) public hasClaimedReward; // planId => has claimed reward pool share
     
     // Constants
@@ -49,46 +52,44 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
     uint256 public constant REWARD_PERCENTAGE_BPS = 2000; // 20% in basis points
     
     // Events
-    event PlanCreated(uint256 indexed planId, address indexed owner, address token, uint256 dailyAmount, uint256 totalDays, uint256 penaltyStake);
+    event PlanCreated(uint256 indexed planId, address indexed owner, uint256 dailyAmount, uint256 totalDays, uint256 penaltyStake);
     event DailyPaid(uint256 indexed planId, address indexed payer, uint256 currentDay);
     event PenaltyDeducted(uint256 indexed planId, uint256 amount, uint256 remainingStake);
     event PlanFailed(uint256 indexed planId);
     event PlanCompleted(uint256 indexed planId);
     event Claimed(uint256 indexed planId, address indexed owner, uint256 savedAmount, uint256 rewardBonus, uint256 rewardPoolShare);
-    event RewardPoolContributed(address indexed token, uint256 amount);
+    event RewardPoolContributed(uint256 amount);
     event RewardPoolDistributed(uint256 indexed planId, address indexed recipient, uint256 amount);
 
     constructor() Ownable(msg.sender) {}
 
     /**
      * @notice Create a new saving plan
-     * @param token ERC20 token address for payments and stake
-     * @param dailyAmount Amount to pay each day (in token units)
+     * @param dailyAmount Amount to pay each day (in CELO wei)
      * @param totalDays Total number of days for the plan
-     * @param penaltyStake Penalty stake amount (in token units)
+     * @param penaltyStake Penalty stake amount (in CELO wei)
+     * @param penaltyPercent Penalty percentage (e.g., 10 = 10%, 15 = 15%, 20 = 20%)
      * @return planId The ID of the created plan
      */
     function createPlan(
-        address token,
         uint256 dailyAmount,
         uint256 totalDays,
-        uint256 penaltyStake
-    ) external nonReentrant returns (uint256) {
+        uint256 penaltyStake,
+        uint256 penaltyPercent
+    ) external payable nonReentrant returns (uint256) {
         require(totalDays > 0, "totalDays>0");
         require(dailyAmount > 0, "dailyAmount>0");
         require(penaltyStake > 0, "penaltyStake>0");
-        require(token != address(0), "invalid-token");
-
-        // Transfer penalty stake from user
-        IERC20(token).transferFrom(msg.sender, address(this), penaltyStake);
+        require(penaltyPercent > 0 && penaltyPercent <= 100, "invalid-penalty-percent");
+        require(msg.value == penaltyStake, "incorrect-stake-amount");
 
         planCounter++;
         plans[planCounter] = Plan({
             user: msg.sender,
-            token: token,
             dailyAmount: dailyAmount,
             totalDays: totalDays,
             penaltyStake: penaltyStake,
+            penaltyPercent: penaltyPercent,
             currentDay: 0,
             missedDays: 0,
             isActive: true,
@@ -100,7 +101,7 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
             hasUsedGracePeriod: false
         });
 
-        emit PlanCreated(planCounter, msg.sender, token, dailyAmount, totalDays, penaltyStake);
+        emit PlanCreated(planCounter, msg.sender, dailyAmount, totalDays, penaltyStake);
         return planCounter;
     }
 
@@ -108,14 +109,12 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
      * @notice Pay the daily amount for a plan
      * @param planId The ID of the plan
      */
-    function payDaily(uint256 planId) external nonReentrant {
+    function payDaily(uint256 planId) external payable nonReentrant {
         Plan storage p = plans[planId];
         require(p.isActive && !p.isFailed && !p.isCompleted, "plan-not-active");
         require(p.currentDay < p.totalDays, "plan-already-complete");
         require(msg.sender == p.user, "not-plan-owner");
-
-        // Transfer daily amount from user
-        IERC20(p.token).transferFrom(msg.sender, address(this), p.dailyAmount);
+        require(msg.value == p.dailyAmount, "incorrect-daily-amount");
 
         // Set start time on first payment
         if (p.startTime == 0) {
@@ -154,61 +153,44 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
         require(p.isActive && !p.isFailed && !p.isCompleted, "plan-not-active");
         require(p.lastPaidAt > 0, "no-payments-yet");
 
-        uint256 timeSinceLastPayment = block.timestamp - p.lastPaidAt;
-        
         // Check if payment is overdue (more than 1 day since last payment)
-        if (timeSinceLastPayment > 1 days) {
-            uint256 daysOverdue = timeSinceLastPayment / 1 days;
-            
+        if (block.timestamp - p.lastPaidAt > 1 days) {
             // Check if this is the first miss
             if (p.firstMissTime == 0) {
                 p.firstMissTime = block.timestamp;
             }
 
             // Check if grace period has expired
-            bool inGracePeriod = !p.hasUsedGracePeriod && 
-                                 block.timestamp <= p.firstMissTime + GRACE_PERIOD;
-
-            if (!inGracePeriod) {
+            if (p.hasUsedGracePeriod || block.timestamp > p.firstMissTime + GRACE_PERIOD) {
                 // Grace period expired, deduct penalties
                 p.hasUsedGracePeriod = true;
                 
-                // Calculate how many days to penalize (days overdue minus grace period)
-                uint256 daysToPenalize = daysOverdue;
-                if (p.firstMissTime > 0 && block.timestamp > p.firstMissTime + GRACE_PERIOD) {
-                    // Subtract grace period days
-                    uint256 graceExpiredAt = p.firstMissTime + GRACE_PERIOD;
-                    if (block.timestamp > graceExpiredAt) {
-                        daysToPenalize = (block.timestamp - graceExpiredAt) / 1 days;
+                // Calculate days to penalize
+                uint256 graceExpiredAt = p.firstMissTime + GRACE_PERIOD;
+                uint256 daysToPenalize = block.timestamp > graceExpiredAt 
+                    ? (block.timestamp - graceExpiredAt) / 1 days 
+                    : 0;
+
+                if (daysToPenalize > 0) {
+                    // Calculate total penalty (percentage of daily amount per day)
+                    uint256 totalPenalty = (p.dailyAmount * p.penaltyPercent * daysToPenalize) / 100;
+
+                    // Only deduct if there's stake remaining
+                    if (totalPenalty > 0 && p.penaltyStake >= totalPenalty) {
+                        p.penaltyStake -= totalPenalty;
+                        p.missedDays += daysToPenalize;
+                        rewardPool += totalPenalty;
+                        
+                        emit PenaltyDeducted(planId, totalPenalty, p.penaltyStake);
+                        emit RewardPoolContributed(totalPenalty);
                     }
-                }
 
-                // Deduct penalty for each missed day
-                // Penalty is calculated as percentage of daily amount
-                // Frontend determines the percentage based on level (10%, 15%, 20%)
-                // Contract uses a base penalty rate - frontend should call checkAndDeductPenalty
-                // with appropriate timing to match the level's penalty percentage
-                // For now, we use 10% as minimum - frontend can handle different rates
-                uint256 penaltyPerDay = (p.dailyAmount * 10) / 100; // 10% of daily amount (minimum)
-                uint256 totalPenalty = penaltyPerDay * daysToPenalize;
-
-                // Only deduct if there's stake remaining
-                if (totalPenalty > 0 && p.penaltyStake >= totalPenalty) {
-                    p.penaltyStake -= totalPenalty;
-                    p.missedDays += daysToPenalize;
-                    
-                    // Add penalty to reward pool
-                    rewardPool[p.token] += totalPenalty;
-                    
-                    emit PenaltyDeducted(planId, totalPenalty, p.penaltyStake);
-                    emit RewardPoolContributed(p.token, totalPenalty);
-                }
-
-                // If stake is depleted, mark as failed
-                if (p.penaltyStake == 0) {
-                    p.isFailed = true;
-                    p.isActive = false;
-                    emit PlanFailed(planId);
+                    // If stake is depleted, mark as failed
+                    if (p.penaltyStake == 0) {
+                        p.isFailed = true;
+                        p.isActive = false;
+                        emit PlanFailed(planId);
+                    }
                 }
             }
         }
@@ -229,8 +211,8 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
         
         // Send remaining stake to reward pool
         if (p.penaltyStake > 0) {
-            rewardPool[p.token] += p.penaltyStake;
-            emit RewardPoolContributed(p.token, p.penaltyStake);
+            rewardPool += p.penaltyStake;
+            emit RewardPoolContributed(p.penaltyStake);
             p.penaltyStake = 0;
         }
 
@@ -253,9 +235,9 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
         
         // Send remaining stake to reward pool
         if (p.penaltyStake > 0) {
-            rewardPool[p.token] += p.penaltyStake;
+            rewardPool += p.penaltyStake;
             p.penaltyStake = 0;
-            emit RewardPoolContributed(p.token, p.penaltyStake);
+            emit RewardPoolContributed(p.penaltyStake);
         }
 
         emit PlanFailed(planId);
@@ -270,28 +252,10 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
         require(p.user == msg.sender, "not-plan-owner");
         require(p.isCompleted, "plan-not-completed");
 
+        // Calculate amounts
         uint256 savedAmount = p.dailyAmount * p.totalDays;
-        uint256 rewardBonus = (savedAmount * REWARD_PERCENTAGE_BPS) / 10000; // 20% bonus
-        
-        // Calculate reward pool share
-        // For simplicity, distribute a portion of reward pool to this completer
-        uint256 rewardPoolShare = 0;
-        if (rewardPool[p.token] > 0 && !hasClaimedReward[planId]) {
-            // Get count of unclaimed completed plans for this token
-            uint256 unclaimedCount = _getUnclaimedCompletedCount(p.token);
-            if (unclaimedCount > 0) {
-                // Distribute equally among all unclaimed completers
-                rewardPoolShare = rewardPool[p.token] / unclaimedCount;
-                // Ensure we don't exceed available pool
-                if (rewardPoolShare > rewardPool[p.token]) {
-                    rewardPoolShare = rewardPool[p.token];
-                }
-                rewardPool[p.token] -= rewardPoolShare;
-                hasClaimedReward[planId] = true;
-                emit RewardPoolDistributed(planId, msg.sender, rewardPoolShare);
-            }
-        }
-
+        uint256 rewardBonus = (savedAmount * REWARD_PERCENTAGE_BPS) / 10000;
+        uint256 rewardPoolShare = _calculateRewardPoolShare(planId, msg.sender);
         uint256 totalToWithdraw = savedAmount + rewardBonus + rewardPoolShare + p.penaltyStake;
 
         // Zero out to prevent reentrancy
@@ -299,10 +263,35 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
         p.penaltyStake = 0;
         p.isCompleted = false;
 
-        // Transfer all funds
-        IERC20(p.token).transfer(msg.sender, totalToWithdraw);
+        // Transfer all funds in native CELO
+        payable(msg.sender).sendValue(totalToWithdraw);
 
         emit Claimed(planId, msg.sender, savedAmount, rewardBonus, rewardPoolShare);
+    }
+
+    /**
+     * @notice Internal function to calculate reward pool share
+     */
+    function _calculateRewardPoolShare(uint256 planId, address recipient) internal returns (uint256) {
+        if (rewardPool == 0 || hasClaimedReward[planId]) {
+            return 0;
+        }
+        
+        uint256 unclaimedCount = _getUnclaimedCompletedCount();
+        if (unclaimedCount == 0) {
+            return 0;
+        }
+        
+        uint256 share = rewardPool / unclaimedCount;
+        if (share > rewardPool) {
+            share = rewardPool;
+        }
+        
+        rewardPool -= share;
+        hasClaimedReward[planId] = true;
+        emit RewardPoolDistributed(planId, recipient, share);
+        
+        return share;
     }
 
     /**
@@ -315,22 +304,21 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Get reward pool balance for a token
-     * @param token The token address
-     * @return balance The reward pool balance
+     * @notice Get reward pool balance
+     * @return balance The reward pool balance in CELO wei
      */
-    function getRewardPoolBalance(address token) external view returns (uint256) {
-        return rewardPool[token];
+    function getRewardPoolBalance() external view returns (uint256) {
+        return rewardPool;
     }
 
     /**
-     * @notice Internal function to get count of unclaimed completed plans for a token
+     * @notice Internal function to get count of unclaimed completed plans
      * @dev This is a simplified version - in production, you'd want to track this more efficiently
      */
-    function _getUnclaimedCompletedCount(address token) internal view returns (uint256) {
+    function _getUnclaimedCompletedCount() internal view returns (uint256) {
         uint256 count = 0;
         for (uint256 i = 1; i <= planCounter; i++) {
-            if (plans[i].token == token && plans[i].isCompleted && !hasClaimedReward[i]) {
+            if (plans[i].isCompleted && !hasClaimedReward[i]) {
                 count++;
             }
         }
@@ -339,14 +327,14 @@ contract SimpleSavingPlan is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Emergency function to update reward pool (admin only)
+     * @notice Emergency function to withdraw reward pool (admin only)
      * @dev Only use in case of issues with reward distribution
      */
-    function emergencyWithdrawRewardPool(address token, address to) external onlyOwner {
+    function emergencyWithdrawRewardPool(address payable to) external onlyOwner {
         require(to != address(0), "invalid-address");
-        uint256 amount = rewardPool[token];
-        rewardPool[token] = 0;
-        IERC20(token).transfer(to, amount);
+        uint256 amount = rewardPool;
+        rewardPool = 0;
+        to.sendValue(amount);
     }
 }
 

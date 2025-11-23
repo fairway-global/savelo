@@ -33,7 +33,7 @@ export function PlanDashboard({ plan, planId, tokenAddress }: PlanDashboardProps
     address: tokenAddress,
     abi: ERC20ABI,
     functionName: "symbol",
-  });
+  }) as { data: string | undefined };
 
   const { data: tokenDecimals } = useReadContract({
     address: tokenAddress,
@@ -61,6 +61,20 @@ export function PlanDashboard({ plan, planId, tokenAddress }: PlanDashboardProps
     const nextDayStart = startTime + (daysSinceStart + 1) * 86400;
     return nextDayStart;
   };
+
+  const handleMissedPayment = useCallback(() => {
+    // Reset streak to zero
+    setStreakCount(0);
+    setLastPaymentDay(0);
+    setHasPaidToday(false);
+    // The contract will handle the penalty automatically
+    // Refetch plan to get updated data (missedDays will increase)
+    refetchPlan();
+    // Restart timer for next day
+    setTimeout(() => {
+      setIsTimerActive(true);
+    }, 1000);
+  }, [refetchPlan]);
 
   // Monitor for missed payments and update timer
   useEffect(() => {
@@ -179,24 +193,10 @@ export function PlanDashboard({ plan, planId, tokenAddress }: PlanDashboardProps
     }
   }, [plan.isActive, currentDay, startTime, missedDays]);
 
-  const handleMissedPayment = useCallback(() => {
-    // Reset streak to zero
-    setStreakCount(0);
-    setLastPaymentDay(0);
-    setHasPaidToday(false);
-    // The contract will handle the penalty automatically
-    // Refetch plan to get updated data (missedDays will increase)
-    refetchPlan();
-    // Restart timer for next day
-    setTimeout(() => {
-      setIsTimerActive(true);
-    }, 1000);
-  }, [refetchPlan]);
-
   const handlePayDaily = async () => {
     setIsPaying(true);
     try {
-      await payDaily(planId, tokenAddress, formatUnits(plan.dailyAmount, decimals), decimals);
+      await payDaily(planId, formatUnits(plan.dailyAmount, decimals));
       // Payment successful - update state immediately for better UX
       setHasPaidToday(true);
       setIsTimerActive(false);

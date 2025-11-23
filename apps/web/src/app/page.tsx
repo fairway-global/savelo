@@ -8,12 +8,13 @@ import { LevelSelector } from "@/components/saving-plan/level-selector";
 import { PlanCreator } from "@/components/saving-plan/plan-creator";
 import { PlanCalendar } from "@/components/saving-plan/plan-calendar";
 import { PlanDashboard } from "@/components/saving-plan/plan-dashboard";
-import { useSavingContract, SAVING_LEVELS, SavingLevel } from "@/hooks/use-saving-contract";
+import { useSavingContract, SAVING_LEVELS, SavingLevel } from "@/contexts/saving-contract-context";
 import { env } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import NeoSlider from "@/components/ui/NeoSlider";
+import { formatUsdWithCelo, celoToUsd } from "@/lib/celo-conversion";
 
 export default function Home() {
   const { context, isMiniAppReady } = useMiniApp();
@@ -22,7 +23,7 @@ export default function Home() {
   const [showPlanner, setShowPlanner] = useState(false);
   
   // Wallet connection hooks
-  const { isConnected, isConnecting } = useAccount();
+  const { isConnected, isConnecting, address } = useAccount();
   const { connect, connectors } = useConnect();
   
   // Saving plan state
@@ -81,18 +82,13 @@ export default function Home() {
   
   const { planData, setSelectedPlanId, refetchPlan, createdPlanId } = useSavingContract();
   
-  // Token address from environment
-  const tokenAddress = (env.NEXT_PUBLIC_TOKEN_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`;
-  
-  // Debug: Log token address (check browser console)
+  // Debug: Log when createdPlanId changes
   useEffect(() => {
-    console.log("=== Environment Variables Debug ===");
-    console.log("Token Address:", env.NEXT_PUBLIC_TOKEN_ADDRESS);
-    console.log("Token Address (resolved):", tokenAddress);
-    console.log("Contract Address:", env.NEXT_PUBLIC_CONTRACT_ADDRESS);
-    console.log("Is token address valid?", tokenAddress !== "0x0000000000000000000000000000000000000000");
-    console.log("===================================");
-  }, [tokenAddress]);
+    console.log("🔄 createdPlanId changed in page.tsx:", createdPlanId?.toString() || "null", "value:", createdPlanId);
+  }, [createdPlanId]);
+  
+  // Debug: Log on every render to see if component is re-rendering
+  console.log("🖼️ page.tsx render, createdPlanId:", createdPlanId?.toString() || "null");
   
   // Auto-connect wallet when miniapp is ready (only in Farcaster context)
   useEffect(() => {
@@ -106,57 +102,130 @@ export default function Home() {
     }
   }, [isMiniAppReady, isConnected, isConnecting, connectors, connect, context]);
 
-  // Check for existing plan
+  // Check for existing plan when wallet connects
   useEffect(() => {
-    const storedPlanId = localStorage.getItem("savingPlanId");
-    if (storedPlanId) {
-      const planId = BigInt(storedPlanId);
-      setCurrentPlanId(planId);
-      setSelectedPlanId(planId);
-      setHasActivePlan(true);
+    if (isConnected && address) {
+      console.log("🔍 Checking for saved plan for wallet:", address);
+      // Check if this wallet address has a saved plan
+      const walletPlansKey = `walletPlans_${address.toLowerCase()}`;
+      const savedPlanId = localStorage.getItem(walletPlansKey);
+      
+      if (savedPlanId) {
+        console.log("✅ Found saved plan for wallet:", savedPlanId);
+        const planId = BigInt(savedPlanId);
+        setCurrentPlanId(planId);
+        setSelectedPlanId(planId);
+        setHasActivePlan(true);
+        // Also set the general savingPlanId for backward compatibility
+        localStorage.setItem("savingPlanId", savedPlanId);
+        // Refetch plan data to verify it belongs to this wallet
+        setTimeout(() => {
+          refetchPlan();
+        }, 500);
+      } else {
+        // Check for legacy plan ID (without wallet address)
+        const legacyPlanId = localStorage.getItem("savingPlanId");
+        if (legacyPlanId) {
+          console.log("📦 Found legacy plan ID, migrating to wallet-specific storage");
+          const planId = BigInt(legacyPlanId);
+          setCurrentPlanId(planId);
+          setSelectedPlanId(planId);
+          setHasActivePlan(true);
+          // Migrate to wallet-specific storage
+          localStorage.setItem(walletPlansKey, legacyPlanId);
+          // Refetch plan data to verify it belongs to this wallet
+          setTimeout(() => {
+            refetchPlan();
+          }, 500);
+        }
+      }
+    } else if (!isConnected) {
+      // Wallet disconnected - clear active plan state (but keep saved plan for when they reconnect)
+      setHasActivePlan(false);
+      setCurrentPlanId(null);
+      setSelectedPlanId(null);
     }
-  }, [setSelectedPlanId]);
+  }, [isConnected, address, setSelectedPlanId, refetchPlan]);
 
-  // Watch plan data changes
+  // Watch plan data changes and verify plan ownership
   useEffect(() => {
-    if (planData) {
+    if (planData && address) {
+      // Verify the plan belongs to the connected wallet
+      const planOwner = planData.user?.toLowerCase();
+      const connectedAddress = address.toLowerCase();
+      
+      if (planOwner && planOwner !== connectedAddress) {
+        console.warn("⚠️ Plan does not belong to connected wallet. Clearing plan state.");
+        setHasActivePlan(false);
+        setCurrentPlanId(null);
+        setSelectedPlanId(null);
+        // Remove incorrect plan storage
+        const walletPlansKey = `walletPlans_${connectedAddress}`;
+        localStorage.removeItem(walletPlansKey);
+        localStorage.removeItem("savingPlanId");
+        return;
+      }
+      
       if (planData.isCompleted || planData.isFailed) {
         setHasActivePlan(false);
+        // Remove wallet-specific plan storage
+        const walletPlansKey = `walletPlans_${address.toLowerCase()}`;
+        localStorage.removeItem(walletPlansKey);
         localStorage.removeItem("savingPlanId");
+        console.log("🗑️ Removed completed/failed plan for wallet:", address);
       } else if (planData.isActive) {
         setHasActivePlan(true);
       }
     }
-  }, [planData]);
+  }, [planData, address, setSelectedPlanId]);
 
 
-  const handlePlanCreated = () => {
-    if (createdPlanId) {
-      setHasActivePlan(true);
-      setCurrentPlanId(createdPlanId);
-      setSelectedPlanId(createdPlanId);
-      localStorage.setItem("savingPlanId", createdPlanId.toString());
-      setSelectedLevel(null);
-      refetchPlan();
-      setTimeout(() => {
-        refetchPlan();
-      }, 2000);
-    }
-  };
 
   useEffect(() => {
-    if (createdPlanId) {
-      setHasActivePlan(true);
-      setCurrentPlanId(createdPlanId);
-      setSelectedPlanId(createdPlanId);
-      localStorage.setItem("savingPlanId", createdPlanId.toString());
-      setSelectedLevel(null);
-      refetchPlan();
-      setTimeout(() => {
+    const planIdValue = createdPlanId;
+    console.log("🔔 useEffect triggered, createdPlanId:", planIdValue?.toString() || "null", "type:", typeof planIdValue, "isTruthy:", !!planIdValue);
+    
+    // Check if we have a valid plan ID (not null, not undefined, and not 0)
+    if (planIdValue !== null && planIdValue !== undefined && planIdValue !== BigInt(0)) {
+      const planIdStr = planIdValue.toString();
+      console.log("🚀 Plan created! Plan ID:", planIdStr);
+      console.log("📊 Navigating to dashboard...");
+      
+      // Only navigate if we don't already have this plan active
+      if (currentPlanId?.toString() !== planIdStr) {
+        console.log("✅ Setting up dashboard for plan:", planIdStr);
+        setHasActivePlan(true);
+        setCurrentPlanId(planIdValue);
+        setSelectedPlanId(planIdValue);
+        
+        // Save plan ID with wallet address for persistence
+        if (address) {
+          const walletPlansKey = `walletPlans_${address.toLowerCase()}`;
+          localStorage.setItem(walletPlansKey, planIdStr);
+          console.log("💾 Saved plan for wallet:", address, "planId:", planIdStr);
+        }
+        // Also save legacy format for backward compatibility
+        localStorage.setItem("savingPlanId", planIdStr);
+        
+        setSelectedLevel(null);
+        setCustomDays("");
+        setCustomDailyAmount("");
+        setPenaltyStake("0");
+        // Refetch plan data immediately and then again after delays to ensure it's loaded
         refetchPlan();
-      }, 2000);
+        setTimeout(() => {
+          refetchPlan();
+        }, 1000);
+        setTimeout(() => {
+          refetchPlan();
+        }, 3000);
+      } else {
+        console.log("⚠️ Plan already active, skipping navigation");
+      }
+    } else {
+      console.log("⏸️ No valid planId yet, waiting...");
     }
-  }, [createdPlanId, setSelectedPlanId, refetchPlan]);
+  }, [createdPlanId, setSelectedPlanId, refetchPlan, currentPlanId, address]);
 
   const slides = [
     {
@@ -310,7 +379,9 @@ export default function Home() {
                   setCurrentPlanId(null);
                   setSelectedPlanId(null);
                   setSelectedLevel(null);
-                  localStorage.removeItem("savingPlanId");
+                  // Don't remove saved plan - user might want to come back
+                  // Only remove if they explicitly want to start a new plan
+                  console.log("👈 User navigated back to plan selection (plan still saved)");
                 }}
                 variant="outline"
                 className="border-none bg-[#F5F5F7] shadow-neo rounded-full px-4 py-2 text-sm text-[#16243D] hover:shadow-neoSoft"
@@ -323,12 +394,12 @@ export default function Home() {
                   <PlanDashboard 
                     plan={planData} 
                     planId={currentPlanId}
-                    tokenAddress={tokenAddress}
+                    tokenAddress={env.NEXT_PUBLIC_TOKEN_ADDRESS as `0x${string}`}
                   />
                   <PlanCalendar 
                     plan={planData} 
                     planId={currentPlanId}
-                    tokenAddress={tokenAddress}
+                    tokenAddress={env.NEXT_PUBLIC_TOKEN_ADDRESS as `0x${string}`}
                   />
                 </>
               ) : (
@@ -388,18 +459,51 @@ export default function Home() {
                       />
                     </Card>
 
-                    <Card className="p-6 rounded-neo shadow-neo bg-[#F5F5F7] border border-white/70">
-                      <label className="block text-xs font-semibold text-[#4B5563] mb-3 uppercase tracking-wide">
-                        Daily Amount (${selectedLevel.minDailyAmount}-${selectedLevel.maxDailyAmount})
+                    {/* Daily Amount Input */}
+                    <Card className="p-6 border-2 border-black bg-celo-dark-tan">
+                      <label className="block text-eyebrow font-bold text-black mb-3 uppercase">
+                        Daily Amount in USD
                       </label>
-                      <NeoSlider
-                        min={selectedLevel.minDailyAmount}
-                        max={selectedLevel.maxDailyAmount}
-                        step={0.5}
-                        value={Number(customDailyAmount) || selectedLevel.minDailyAmount}
-                        onChange={(val) => setCustomDailyAmount(val.toFixed(2))}
-                        label="Daily amount"
-                      />
+                      <div className="mb-2 p-3 border-2 border-celo-purple bg-celo-light-blue">
+                        <p className="text-body-s text-black font-bold mb-1">
+                          💵 Enter amount in US Dollars (${selectedLevel.minDailyAmount}-${selectedLevel.maxDailyAmount})
+                        </p>
+                        <p className="text-body-xs text-celo-body-copy">
+                          We&apos;ll convert it to CELO automatically (1 CELO = $0.16)
+                        </p>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-body-l font-bold text-black">$</span>
+                        <input
+                          type="number"
+                          min={selectedLevel.minDailyAmount}
+                          max={selectedLevel.maxDailyAmount}
+                          step="0.01"
+                          value={customDailyAmount}
+                          onChange={(e) => setCustomDailyAmount(e.target.value)}
+                          className={`w-full pl-8 pr-4 py-3 border-2 border-black bg-white text-black text-body-m font-inter focus:outline-none focus:ring-2 ${
+                            customDailyAmount && !isValidDailyAmount(customDailyAmount)
+                              ? "border-celo-error focus:ring-celo-error"
+                              : "focus:ring-celo-purple"
+                          }`}
+                          placeholder={`${selectedLevel.minDailyAmount}.00`}
+                        />
+                      </div>
+                      {customDailyAmount && isValidDailyAmount(customDailyAmount) && (
+                        <div className="mt-3 p-3 border-2 border-celo-yellow bg-celo-yellow">
+                          <p className="text-body-m text-black font-bold">
+                            💰 Equivalent: {formatUsdWithCelo(customDailyAmount)}
+                          </p>
+                          <p className="text-body-xs text-celo-body-copy mt-1">
+                            Amount shown in USD with CELO equivalent in parentheses
+                          </p>
+                        </div>
+                      )}
+                      {customDailyAmount && !isValidDailyAmount(customDailyAmount) && (
+                        <p className="mt-2 text-body-s text-celo-error font-bold">
+                          Daily amount must be between ${selectedLevel.minDailyAmount} and ${selectedLevel.maxDailyAmount} USD
+                        </p>
+                      )}
                     </Card>
 
                     <Card className="p-6 rounded-neo shadow-neo bg-[#F5F5F7] border border-white/70">
@@ -411,21 +515,48 @@ export default function Home() {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-2xl font-semibold text-[#FBCC5C]">${penaltyStake}</p>
+                          <p className="text-h4 font-alpina text-celo-yellow">{formatUsdWithCelo(penaltyStake)}</p>
                         </div>
                       </div>
                     </Card>
 
-                    <Card className="p-6 rounded-neo shadow-neo bg-[#F5F5F7] border border-white/70">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xl font-semibold text-[#16243D]">How It Works</h4>
-                        <button
-                          type="button"
-                          onClick={() => setShowHowDetails((prev) => !prev)}
-                          className="text-sm font-semibold text-[#16243D] underline"
-                        >
-                          {showHowDetails ? "Hide details" : "Show more details"}
-                        </button>
+                    {/* Explanation Section */}
+                    <Card className="p-6 border-2 border-black bg-celo-purple text-white">
+                      <h4 className="text-h4 font-alpina text-celo-yellow mb-4">How It Works</h4>
+                      
+                      <div className="space-y-4">
+                        <div className="border-l-4 border-celo-yellow pl-4">
+                          <p className="text-body-m font-bold text-white mb-1">⏰ Grace Period (First Miss)</p>
+                          <p className="text-body-s text-white">
+                            If you miss your first payment, you get a <strong>2-day grace period</strong> with no penalty. 
+                            Use this time to catch up and make your payment.
+                          </p>
+                        </div>
+
+                        <div className="border-l-4 border-celo-error pl-4">
+                          <p className="text-body-m font-bold text-white mb-1">⚠️ Penalty After Grace Period</p>
+                          <p className="text-body-s text-white">
+                            After the grace period, if you miss a day, <strong>{selectedLevel.penaltyPercent}% of your daily amount</strong> 
+                            will be deducted from your penalty stake <strong>every missed day</strong>. 
+                            All deducted penalties go to the <strong>Community Reward Pool</strong>.
+                          </p>
+                        </div>
+
+                        <div className="border-l-4 border-celo-success pl-4">
+                          <p className="text-body-m font-bold text-white mb-1">🏆 Completion Reward (20% Bonus)</p>
+                          <p className="text-body-s text-white">
+                            If you complete your saving streak, you&apos;ll receive a <strong>20% bonus</strong> on your total savings! 
+                            Plus, you&apos;ll get a share of the Community Reward Pool from all penalties collected from failed plans.
+                          </p>
+                        </div>
+
+                        <div className="border-l-4 border-celo-light-blue pl-4">
+                          <p className="text-body-m font-bold text-white mb-1">💰 Community Reward Pool</p>
+                          <p className="text-body-s text-white">
+                            All penalties deducted from missed payments are pooled together and distributed to users who 
+                            successfully complete their saving plans. The more you save, the more you can earn!
+                          </p>
+                        </div>
                       </div>
                       {showHowDetails ? (
                         <div className="space-y-4 mt-3">
@@ -472,9 +603,7 @@ export default function Home() {
                         selectedLevel={selectedLevel}
                         customDays={parseInt(customDays)}
                         customDailyAmount={customDailyAmount}
-                        tokenAddress={tokenAddress}
                         penaltyStake={penaltyStake}
-                        onPlanCreated={handlePlanCreated}
                       />
                     )}
                   </div>
@@ -524,3 +653,4 @@ export default function Home() {
     </main>
   );
 }
+
