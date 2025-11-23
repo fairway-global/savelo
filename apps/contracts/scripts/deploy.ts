@@ -1,10 +1,28 @@
 import hre from "hardhat";
+import * as dotenv from "dotenv";
+
+// Load environment variables
+dotenv.config();
 
 async function main() {
   console.log("🚀 Deploying SimpleSavingPlan contract to Celo...\n");
 
-  // Get the deployer account using viem
-  const [deployer] = await hre.viem.getWalletClients();
+  // Debug: Check if PRIVATE_KEY is loaded
+  console.log("🔍 Checking environment variables...");
+  console.log("PRIVATE_KEY exists:", !!process.env.PRIVATE_KEY);
+  console.log("PRIVATE_KEY length:", process.env.PRIVATE_KEY?.length || 0);
+  
+  // Get wallet clients - will use first account from hardhat config
+  const walletClients = await hre.viem.getWalletClients();
+  console.log("walletClients count:", walletClients?.length || 0);
+  
+  if (!walletClients || walletClients.length === 0) {
+    console.error("❌ Error: No wallet clients found.");
+    console.error("Make sure PRIVATE_KEY is set in your .env file.");
+    process.exit(1);
+  }
+
+  const deployer = walletClients[0];
   const deployerAddress = deployer.account.address;
   console.log("📝 Deploying with account:", deployerAddress);
   
@@ -23,11 +41,9 @@ async function main() {
     console.log("⚠️  Could not check balance, continuing with deployment...\n");
   }
 
-  // Deploy the contract
+  // Deploy the contract - deployContract will use the first account automatically
   console.log("📦 Deploying contract...");
-  const SimpleSavingPlan = await hre.viem.deployContract("SimpleSavingPlan", [], {
-    walletClient: deployer,
-  });
+  const SimpleSavingPlan = await hre.viem.deployContract("SimpleSavingPlan", []);
 
   const address = SimpleSavingPlan.address;
   console.log("\n✅ Deployment successful!");
