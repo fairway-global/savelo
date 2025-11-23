@@ -101,31 +101,83 @@ export default function Home() {
     }
   }, [isMiniAppReady, isConnected, isConnecting, connectors, connect, context]);
 
-  // Check for existing plan
+  // Check for existing plan when wallet connects
   useEffect(() => {
-    // In a real app, you'd fetch the user's plan ID from your backend or contract
-    // For now, we'll check if there's a plan ID stored locally
-    const storedPlanId = localStorage.getItem("savingPlanId");
-    if (storedPlanId) {
-      const planId = BigInt(storedPlanId);
-      setCurrentPlanId(planId);
-      setSelectedPlanId(planId);
-      setHasActivePlan(true);
+    if (isConnected && address) {
+      console.log("🔍 Checking for saved plan for wallet:", address);
+      // Check if this wallet address has a saved plan
+      const walletPlansKey = `walletPlans_${address.toLowerCase()}`;
+      const savedPlanId = localStorage.getItem(walletPlansKey);
+      
+      if (savedPlanId) {
+        console.log("✅ Found saved plan for wallet:", savedPlanId);
+        const planId = BigInt(savedPlanId);
+        setCurrentPlanId(planId);
+        setSelectedPlanId(planId);
+        setHasActivePlan(true);
+        // Also set the general savingPlanId for backward compatibility
+        localStorage.setItem("savingPlanId", savedPlanId);
+        // Refetch plan data to verify it belongs to this wallet
+        setTimeout(() => {
+          refetchPlan();
+        }, 500);
+      } else {
+        // Check for legacy plan ID (without wallet address)
+        const legacyPlanId = localStorage.getItem("savingPlanId");
+        if (legacyPlanId) {
+          console.log("📦 Found legacy plan ID, migrating to wallet-specific storage");
+          const planId = BigInt(legacyPlanId);
+          setCurrentPlanId(planId);
+          setSelectedPlanId(planId);
+          setHasActivePlan(true);
+          // Migrate to wallet-specific storage
+          localStorage.setItem(walletPlansKey, legacyPlanId);
+          // Refetch plan data to verify it belongs to this wallet
+          setTimeout(() => {
+            refetchPlan();
+          }, 500);
+        }
+      }
+    } else if (!isConnected) {
+      // Wallet disconnected - clear active plan state (but keep saved plan for when they reconnect)
+      setHasActivePlan(false);
+      setCurrentPlanId(null);
+      setSelectedPlanId(null);
     }
-  }, [setSelectedPlanId]);
+  }, [isConnected, address, setSelectedPlanId, refetchPlan]);
 
-  // Watch plan data changes
+  // Watch plan data changes and verify plan ownership
   useEffect(() => {
-    if (planData) {
+    if (planData && address) {
+      // Verify the plan belongs to the connected wallet
+      const planOwner = planData.user?.toLowerCase();
+      const connectedAddress = address.toLowerCase();
+      
+      if (planOwner && planOwner !== connectedAddress) {
+        console.warn("⚠️ Plan does not belong to connected wallet. Clearing plan state.");
+        setHasActivePlan(false);
+        setCurrentPlanId(null);
+        setSelectedPlanId(null);
+        // Remove incorrect plan storage
+        const walletPlansKey = `walletPlans_${connectedAddress}`;
+        localStorage.removeItem(walletPlansKey);
+        localStorage.removeItem("savingPlanId");
+        return;
+      }
+      
       if (planData.isCompleted || planData.isFailed) {
         // Plan is done, allow creating a new one
         setHasActivePlan(false);
+        // Remove wallet-specific plan storage
+        const walletPlansKey = `walletPlans_${address.toLowerCase()}`;
+        localStorage.removeItem(walletPlansKey);
         localStorage.removeItem("savingPlanId");
+        console.log("🗑️ Removed completed/failed plan for wallet:", address);
       } else if (planData.isActive) {
         setHasActivePlan(true);
       }
     }
-  }, [planData]);
+  }, [planData, address, setSelectedPlanId]);
 
 
 
@@ -146,7 +198,16 @@ export default function Home() {
         setHasActivePlan(true);
         setCurrentPlanId(planIdValue);
         setSelectedPlanId(planIdValue);
+        
+        // Save plan ID with wallet address for persistence
+        if (address) {
+          const walletPlansKey = `walletPlans_${address.toLowerCase()}`;
+          localStorage.setItem(walletPlansKey, planIdStr);
+          console.log("💾 Saved plan for wallet:", address, "planId:", planIdStr);
+        }
+        // Also save legacy format for backward compatibility
         localStorage.setItem("savingPlanId", planIdStr);
+        
         setSelectedLevel(null);
         setCustomDays("");
         setCustomDailyAmount("");
@@ -165,7 +226,7 @@ export default function Home() {
     } else {
       console.log("⏸️ No valid planId yet, waiting...");
     }
-  }, [createdPlanId, setSelectedPlanId, refetchPlan, currentPlanId]);
+  }, [createdPlanId, setSelectedPlanId, refetchPlan, currentPlanId, address]);
 
   if (!isMiniAppReady) {
     return (
@@ -207,7 +268,9 @@ export default function Home() {
                   setCurrentPlanId(null);
                   setSelectedPlanId(null);
                   setSelectedLevel(null);
-                  localStorage.removeItem("savingPlanId");
+                  // Don't remove saved plan - user might want to come back
+                  // Only remove if they explicitly want to start a new plan
+                  console.log("👈 User navigated back to plan selection (plan still saved)");
                 }}
                 variant="outline"
                 className="border-2 border-black"

@@ -47,6 +47,20 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
     return nextDayStart;
   };
 
+  const handleMissedPayment = useCallback(() => {
+    // Reset streak to zero
+    setStreakCount(0);
+    setLastPaymentDay(0);
+    setHasPaidToday(false);
+    // The contract will handle the penalty automatically
+    // Refetch plan to get updated data (missedDays will increase)
+    refetchPlan();
+    // Restart timer for next day
+    setTimeout(() => {
+      setIsTimerActive(true);
+    }, 1000);
+  }, [refetchPlan]);
+
   // Monitor for missed payments and update timer
   useEffect(() => {
     if (!plan.isActive || startTime === 0) return;
@@ -163,20 +177,6 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
       setLastPaymentDay(0);
     }
   }, [plan.isActive, currentDay, startTime, missedDays]);
-
-  const handleMissedPayment = useCallback(() => {
-    // Reset streak to zero
-    setStreakCount(0);
-    setLastPaymentDay(0);
-    setHasPaidToday(false);
-    // The contract will handle the penalty automatically
-    // Refetch plan to get updated data (missedDays will increase)
-    refetchPlan();
-    // Restart timer for next day
-    setTimeout(() => {
-      setIsTimerActive(true);
-    }, 1000);
-  }, [refetchPlan]);
 
   const handlePayDaily = async () => {
     setIsPaying(true);
