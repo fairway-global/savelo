@@ -26,8 +26,18 @@ export function PlanCreator({
   penaltyStake,
   onPlanCreated,
 }: PlanCreatorProps) {
-  const { createPlan, isPending, isConfirming, isConfirmed, error, hash } = useSavingContract();
-  const [isCreating, setIsCreating] = useState(false);
+  const { 
+    createPlan, 
+    approveToken, 
+    isPending, 
+    isConfirming, 
+    isConfirmed, 
+    error, 
+    hash,
+    currentOperation 
+  } = useSavingContract();
+  const [step, setStep] = useState<'approve' | 'create' | 'done'>('approve');
+  const [approvalHash, setApprovalHash] = useState<string | null>(null);
 
   // Get token info
   const { data: tokenSymbol } = useReadContract({
@@ -44,11 +54,8 @@ export function PlanCreator({
 
   const decimals = tokenDecimals || 18;
 
-  const handleCreatePlan = async () => {
-    // Debug logging
-    console.log("Token Address in PlanCreator:", tokenAddress);
-    console.log("Is zero address?", tokenAddress === "0x0000000000000000000000000000000000000000");
-    
+  // Handle approval step
+  const handleApproval = async () => {
     if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
       const envValue = process.env.NEXT_PUBLIC_TOKEN_ADDRESS;
       alert(
@@ -63,7 +70,19 @@ export function PlanCreator({
       return;
     }
 
-    setIsCreating(true);
+    try {
+      await approveToken(tokenAddress, penaltyStake, decimals);
+      if (hash) {
+        setApprovalHash(hash);
+      }
+    } catch (err) {
+      console.error("Error approving tokens:", err);
+      alert("Failed to approve tokens. Please try again.");
+    }
+  };
+
+  // Handle plan creation step  
+  const handleCreatePlan = async () => {
     try {
       await createPlan(
         tokenAddress,
@@ -75,13 +94,17 @@ export function PlanCreator({
     } catch (err) {
       console.error("Error creating plan:", err);
       alert("Failed to create plan. Please try again.");
-    } finally {
-      setIsCreating(false);
     }
   };
 
-  // Watch for successful transaction
-  if (isConfirmed && hash) {
+  // Watch for approval confirmation
+  if (step === 'approve' && isConfirmed && currentOperation === 'approving') {
+    setStep('create');
+  }
+
+  // Watch for plan creation confirmation
+  if (step === 'create' && isConfirmed && currentOperation === 'creating') {
+    setStep('done');
     onPlanCreated();
   }
 
@@ -134,21 +157,51 @@ export function PlanCreator({
         </div>
       )}
 
-      <Button
-        onClick={handleCreatePlan}
-        disabled={isPending || isConfirming || isCreating}
-        className="w-full"
-        variant="default"
-      >
-        {isPending || isConfirming || isCreating ? (
-          <>
-            <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin mr-2"></div>
-            {isPending ? "Approving..." : isConfirming ? "Creating Plan..." : "Processing..."}
-          </>
-        ) : (
-          "Create Plan & Stake"
-        )}
-      </Button>
+      {step === 'approve' && (
+        <Button
+          onClick={handleApproval}
+          disabled={isPending || isConfirming}
+          className="w-full"
+          variant="default"
+        >
+          {isPending || isConfirming ? (
+            <>
+              <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin mr-2"></div>
+              {isPending ? "Approving..." : "Confirming..."}
+            </>
+          ) : (
+            "Step 1: Approve Tokens"
+          )}
+        </Button>
+      )}
+
+      {step === 'create' && (
+        <Button
+          onClick={handleCreatePlan}
+          disabled={isPending || isConfirming}
+          className="w-full"
+          variant="default"
+        >
+          {isPending || isConfirming ? (
+            <>
+              <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin mr-2"></div>
+              {isPending ? "Creating..." : "Confirming..."}
+            </>
+          ) : (
+            "Step 2: Create Plan"
+          )}
+        </Button>
+      )}
+
+      {step === 'done' && (
+        <Button
+          disabled={true}
+          className="w-full"
+          variant="default"
+        >
+          ✓ Plan Created Successfully!
+        </Button>
+      )}
 
       {hash && (
         <p className="mt-4 text-body-s text-celo-light-blue text-center font-inter">

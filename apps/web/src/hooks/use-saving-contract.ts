@@ -3,10 +3,13 @@
 import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits, decodeEventLog } from "viem";
 import { useState, useEffect } from "react";
-import SimpleSavingPlanABI from "@/lib/abi/SimpleSavingPlan.json";
+import SimpleSavingPlanArtifact from "@/lib/abi/SimpleSavingPlan.json";
 import ERC20ABI from "@/lib/abi/ERC20.json";
 
 import { env } from "@/lib/env";
+
+// Extract ABI from the artifact
+const SimpleSavingPlanABI = SimpleSavingPlanArtifact.abi;
 
 // Contract address - should be set via environment variable
 const CONTRACT_ADDRESS = (env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`;
@@ -75,6 +78,7 @@ export function useSavingContract() {
 
   const [selectedPlanId, setSelectedPlanId] = useState<bigint | null>(null);
   const [createdPlanId, setCreatedPlanId] = useState<bigint | null>(null);
+  const [currentOperation, setCurrentOperation] = useState<'idle' | 'approving' | 'creating' | 'paying'>('idle');
 
   // Extract plan ID from transaction receipt
   useEffect(() => {
@@ -91,6 +95,7 @@ export function useSavingContract() {
             // If the contract emits a PlanCreated event with planId, extract it
             if (decoded.eventName === "PlanCreated" && (decoded as any).args?.planId) {
               setCreatedPlanId((decoded as any).args.planId);
+              setCurrentOperation('idle');
             }
           } catch (e) {
             // Not the event we're looking for, continue
@@ -120,6 +125,7 @@ export function useSavingContract() {
     }
 
     const amountWei = parseUnits(amount, decimals);
+    setCurrentOperation('approving');
     
     return writeContract({
       address: tokenAddress,
@@ -129,7 +135,7 @@ export function useSavingContract() {
     });
   };
 
-  // Create a new saving plan
+  // Create a new saving plan (call this after approval is confirmed)
   const createPlan = async (
     tokenAddr: `0x${string}`,
     dailyAmount: string,
@@ -141,16 +147,11 @@ export function useSavingContract() {
       throw new Error("Wallet not connected");
     }
 
-    // First approve the penalty stake
+    // Calculate amounts
     const stakeAmount = parseUnits(penaltyStake, tokenDecimals);
-    await approveToken(tokenAddr, penaltyStake, tokenDecimals);
-
-    // Wait for approval transaction
-    // Note: In production, you'd want to wait for the approval tx to confirm first
-    // For now, we'll proceed assuming approval will succeed
-
-    // Create the plan
     const dailyAmountWei = parseUnits(dailyAmount, tokenDecimals);
+    
+    setCurrentOperation('creating');
     
     return writeContract({
       address: CONTRACT_ADDRESS,
@@ -160,16 +161,27 @@ export function useSavingContract() {
     });
   };
 
-  // Pay daily saving
-  const payDaily = async (planId: bigint, tokenAddr: `0x${string}`, dailyAmount: string, tokenDecimals: number = 18) => {
+  // Combined function that handles both approval and creation
+  const createPlanWithApproval = async (
+    tokenAddr: `0x${string}`,
+    dailyAmount: string,
+    totalDays: number,
+    penaltyStake: string,
+    tokenDecimals: number = 18
+  ) => {
+    // This will require UI to handle two separate transactions
+    // First call approveToken, wait for confirmation, then call createPlan
+    throw new Error("Use approveToken first, then createPlan after confirmation");
+  };
+
+  // Pay daily saving (call this after approval is confirmed)
+  const payDaily = async (planId: bigint) => {
     if (!isConnected || !address) {
       throw new Error("Wallet not connected");
     }
 
-    // First approve the daily amount
-    await approveToken(tokenAddr, dailyAmount, tokenDecimals);
+    setCurrentOperation('paying');
 
-    // Pay daily
     return writeContract({
       address: CONTRACT_ADDRESS,
       abi: SimpleSavingPlanABI,
@@ -222,6 +234,7 @@ export function useSavingContract() {
 
   return {
     createPlan,
+    createPlanWithApproval,
     payDaily,
     checkAndDeductPenalty,
     markFailed,
@@ -239,6 +252,7 @@ export function useSavingContract() {
     hash,
     isConnected,
     address,
+    currentOperation,
   };
 }
 
