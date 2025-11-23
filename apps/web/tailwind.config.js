@@ -15,6 +15,14 @@ module.exports = {
     },
     extend: {
       colors: {
+        neo: {
+          surface: "#F5F5F7",
+          accent: "#FBCC5C",
+          ink: "#16243D",
+          text: "#4B5563",
+          muted: "#D1D5DB",
+          warning: "#D65A5A",
+        },
         // Celo Brand Colors
         celo: {
           yellow: "#FCFF52",
@@ -85,6 +93,12 @@ module.exports = {
       borderRadius: {
         DEFAULT: "0",
         none: "0",
+        neo: "12px",
+      },
+      boxShadow: {
+        neo: "4px 4px 10px rgba(0,0,0,0.12), -4px -4px 10px rgba(255,255,255,0.9)",
+        neoSoft: "2px 2px 6px rgba(0,0,0,0.10), -2px -2px 6px rgba(255,255,255,0.85)",
+        neoInset: "inset 4px 4px 8px rgba(0,0,0,0.12), inset -4px -4px 8px rgba(255,255,255,0.9)",
       },
       keyframes: {
         "accordion-down": {
