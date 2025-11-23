@@ -4,11 +4,11 @@ import { createContext, useContext, ReactNode } from "react";
 import { useSavingContract as useSavingContractHook, Plan, SavingLevel, SAVING_LEVELS } from "@/hooks/use-saving-contract";
 
 interface SavingContractContextType {
-  createPlan: (dailyAmount: string, totalDays: number, penaltyStake: string, penaltyPercent: number) => Promise<`0x${string}`>;
-  payDaily: (planId: bigint, dailyAmount: string) => Promise<`0x${string}`>;
-  checkAndDeductPenalty: (planId: bigint) => Promise<`0x${string}`>;
-  markFailed: (planId: bigint) => Promise<`0x${string}`>;
-  withdraw: (planId: bigint) => Promise<`0x${string}`>;
+  createPlan: (dailyAmount: string, totalDays: number, penaltyStake: string, penaltyPercent: number) => Promise<void>;
+  payDaily: (planId: bigint, dailyAmount: string) => Promise<void>;
+  checkAndDeductPenalty: (planId: bigint) => Promise<void>;
+  markFailed: (planId: bigint) => Promise<void>;
+  withdraw: (planId: bigint) => Promise<void>;
   planData: Plan | undefined;
   refetchPlan: () => void;
   selectedPlanId: bigint | null;

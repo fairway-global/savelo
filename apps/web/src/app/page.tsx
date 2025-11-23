@@ -283,10 +283,12 @@ export default function Home() {
                   <PlanDashboard 
                     plan={planData} 
                     planId={currentPlanId}
+                    tokenAddress={env.NEXT_PUBLIC_TOKEN_ADDRESS as `0x${string}`}
                   />
                   <PlanCalendar 
                     plan={planData} 
                     planId={currentPlanId}
+                    tokenAddress={env.NEXT_PUBLIC_TOKEN_ADDRESS as `0x${string}`}
                   />
                 </>
               ) : (

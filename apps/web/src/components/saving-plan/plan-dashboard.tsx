@@ -1,17 +1,21 @@
 "use client";
 
-import { Plan, useSavingContract } from "@/contexts/saving-contract-context";
+import { Plan } from "@/hooks/use-saving-contract";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatUnits } from "viem";
+import { useSavingContract } from "@/hooks/use-saving-contract";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { formatUsdWithCelo, celoToUsd } from "@/lib/celo-conversion";
+import { useReadContract } from "wagmi";
+import ERC20ABI from "@/lib/abi/ERC20.json";
+
 interface PlanDashboardProps {
   plan: Plan;
   planId: bigint;
+  tokenAddress: `0x${string}`;
 }
 
-export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
+export function PlanDashboard({ plan, planId, tokenAddress }: PlanDashboardProps) {
   const { payDaily, isPending, isConfirming, isConfirmed, error, hash, refetchPlan } = useSavingContract();
   const [isPaying, setIsPaying] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<{
@@ -25,8 +29,19 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
   const [streakCount, setStreakCount] = useState<number>(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // CELO uses 18 decimals
-  const decimals = 18;
+  const { data: tokenSymbol } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20ABI,
+    functionName: "symbol",
+  }) as { data: string | undefined };
+
+  const { data: tokenDecimals } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20ABI,
+    functionName: "decimals",
+  }) as { data: number | undefined };
+
+  const decimals = tokenDecimals || 18;
   const currentDay = Number(plan.currentDay);
   const totalDays = Number(plan.totalDays);
   const missedDays = Number(plan.missedDays);
@@ -38,14 +53,14 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
   // Calculate next payment deadline
   // Each day starts at startTime + (dayNumber * 86400)
   // Deadline is end of current day (start of next day)
-  const calculateNextDeadline = useCallback(() => {
+  const calculateNextDeadline = () => {
     if (startTime === 0) return null;
     const now = Math.floor(Date.now() / 1000);
     const daysSinceStart = Math.floor((now - startTime) / 86400);
     // Deadline is end of current day (start of next day)
     const nextDayStart = startTime + (daysSinceStart + 1) * 86400;
     return nextDayStart;
-  }, [startTime]);
+  };
 
   const handleMissedPayment = useCallback(() => {
     // Reset streak to zero
@@ -131,7 +146,7 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isTimerActive, hasPaidToday, startTime, plan.isActive, plan.isCompleted, plan.isFailed, calculateNextDeadline]);
+  }, [isTimerActive, hasPaidToday, startTime, plan.isActive, plan.isCompleted, plan.isFailed]);
 
   // Initialize streak and payment tracking
   useEffect(() => {
@@ -222,7 +237,7 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
               {formatUnits(currentBalance, decimals)}
             </p>
             <p className="text-body-s text-celo-body-copy mt-1">
-              {formatUsdWithCelo(celoToUsd(Number(formatUnits(currentBalance, decimals))))}
+              {tokenSymbol || "tokens"}
             </p>
           </div>
         </Card>
@@ -285,10 +300,10 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
           <div className="text-center space-y-4">
             <div>
               <p className="text-body-l font-bold text-black mb-2">
-                Pay Today&apos;s Saving
+                Pay Today's Saving
               </p>
               <p className="text-body-m text-celo-body-copy">
-                Amount: {formatUsdWithCelo(celoToUsd(Number(formatUnits(plan.dailyAmount, decimals))))}
+                Amount: {formatUnits(plan.dailyAmount, decimals)} {tokenSymbol || "tokens"}
               </p>
             </div>
             <Button
@@ -300,7 +315,7 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
               {isPending || isConfirming || isPaying ? (
                 <>
                   <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin mr-2"></div>
-                  {isPending ? "Processing Payment..." : isConfirming ? "Confirming..." : "Processing..."}
+                  {isPending ? "Approving..." : isConfirming ? "Processing Payment..." : "Processing..."}
                 </>
               ) : (
                 "💳 Pay Now"
@@ -340,4 +355,3 @@ export function PlanDashboard({ plan, planId }: PlanDashboardProps) {
     </div>
   );
 }
-
