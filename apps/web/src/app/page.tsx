@@ -97,14 +97,22 @@ export default function Home() {
     // Only auto-connect Farcaster if we're in a Farcaster context
     // Don't auto-connect MetaMask to avoid unwanted popups
     if (isMiniAppReady && !isConnected && !isConnecting && connectors.length > 0) {
+      // Debug: log available connectors
+      console.log('Available connectors:', connectors.map(c => ({ id: c.id, name: c.name })));
+      
       const farcasterConnector = connectors.find(
-        c => c.id === 'farcaster' || c.id === 'frameWallet'
+        c => c.id === 'farcaster' || c.id === 'frameWallet' || c.id === 'farcasterMiniApp' || c.name?.toLowerCase().includes('farcaster')
       );
-      if (farcasterConnector && context?.client) {
+      
+      console.log('Found Farcaster connector:', farcasterConnector?.id, farcasterConnector?.name);
+      
+      // Auto-connect if we have a Farcaster connector (remove context?.client requirement)
+      if (farcasterConnector) {
+        console.log('Auto-connecting to Farcaster wallet...');
         connect({ connector: farcasterConnector });
       }
     }
-  }, [isMiniAppReady, isConnected, isConnecting, connectors, connect, context]);
+  }, [isMiniAppReady, isConnected, isConnecting, connectors, connect]);
 
   // Check for existing plan when wallet connects
   useEffect(() => {

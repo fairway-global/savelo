@@ -7,7 +7,7 @@
 
 **Save Daily. Keep the Streak.**
 
-A decentralized savings platform that leverages behavioral psychology and blockchain technology to help users build sustainable saving habits through commitment stakes, penalties, and community rewards.
+s through commitment stakes, penalties, and community rewards.
 
 ## 🎯 The Problem We Solve
 
