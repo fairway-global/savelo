@@ -1,0 +1,4 @@
+apps/contracts
+node_modules
+.turbo
+*.log
