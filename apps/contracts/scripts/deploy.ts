@@ -3,15 +3,14 @@ import hre from "hardhat";
 async function main() {
   console.log("🚀 Deploying SimpleSavingPlan contract to Celo...\n");
 
-  // Get the deployer account using viem
-  const [deployer] = await hre.viem.getWalletClients();
-  const deployerAddress = deployer.account.address;
+  // Get the deployer account using ethers
+  const [deployer] = await hre.ethers.getSigners();
+  const deployerAddress = deployer.address;
   console.log("📝 Deploying with account:", deployerAddress);
   
   try {
-    const publicClient = await hre.viem.getPublicClient();
-    const balance = await publicClient.getBalance({ address: deployerAddress });
-    const balanceInCELO = Number(balance) / 1e18;
+    const balance = await hre.ethers.provider.getBalance(deployerAddress);
+    const balanceInCELO = Number(hre.ethers.formatEther(balance));
     console.log(`💰 Account balance: ${balanceInCELO.toFixed(4)} CELO\n`);
     
     if (balance === 0n) {
@@ -25,11 +24,11 @@ async function main() {
 
   // Deploy the contract
   console.log("📦 Deploying contract...");
-  const SimpleSavingPlan = await hre.viem.deployContract("SimpleSavingPlan", [], {
-    walletClient: deployer,
-  });
+  const SimpleSavingPlanFactory = await hre.ethers.getContractFactory("SimpleSavingPlan");
+  const simpleSavingPlan = await SimpleSavingPlanFactory.deploy();
+  await simpleSavingPlan.waitForDeployment();
 
-  const address = SimpleSavingPlan.address;
+  const address = await simpleSavingPlan.getAddress();
   console.log("\n✅ Deployment successful!");
   console.log("📍 Contract address:", address);
   console.log("\n🔍 Verify on Celoscan:");
